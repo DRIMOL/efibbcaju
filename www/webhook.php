@@ -20,7 +20,8 @@ function logMessage($message) {
 // Response function
 function sendResponse($status, $message) {
     http_response_code($status);
-    echo json_encode(['status' => $status, 'message' => $message]);
+    // Apenas retorna a string "200" em vez de um objeto JSON
+    echo "200";
     logMessage("Response sent: $status - $message");
     exit;
 }
@@ -82,10 +83,15 @@ try {
     logMessage("Received webhook data: " . $requestBody);
     
     // Forward the data to n8n webhook
-    if (forwardToN8n($data)) {
+    $forwardResult = forwardToN8n($data);
+    
+    // Always return 200 status code
+    if ($forwardResult) {
         sendResponse(200, "Webhook processed successfully");
     } else {
-        sendResponse(500, "Failed to forward webhook data to n8n");
+        // Log the error but still return 200
+        logMessage("Warning: Failed to forward webhook data to n8n, but returning 200 as requested");
+        sendResponse(200, "Webhook received");
     }
     
 } catch (Exception $e) {
