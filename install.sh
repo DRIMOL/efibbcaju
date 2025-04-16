@@ -117,12 +117,18 @@ fi
 
 print_message "Diretório do projeto: $PROJECT_DIR"
 
+# Salvar o diretório atual
+CURRENT_DIR=$(pwd)
+
 # Verificar se o diretório já existe
 if [ -d "$PROJECT_DIR" ]; then
     print_warning "O diretório $PROJECT_DIR já existe."
     read -p "Deseja remover e recriar? (s/n): " recreate_dir
     if [ "$recreate_dir" = "s" ]; then
+        # Mudar para um diretório seguro antes de remover
+        cd /tmp
         rm -rf "$PROJECT_DIR"
+        check_success "Diretório removido com sucesso." "Falha ao remover diretório."
     else
         print_warning "Usando o diretório existente."
     fi
@@ -131,12 +137,21 @@ fi
 # Clonar o repositório se o diretório não existir
 if [ ! -d "$PROJECT_DIR" ]; then
     print_message "Clonando o repositório do GitHub..."
+    # Clonar a partir de um diretório seguro
+    cd /tmp
     if [ "$INSTALL_USER" = "root" ]; then
         git clone https://github.com/DRIMOL/efibbcaju.git $PROJECT_DIR
     else
         su - $INSTALL_USER -c "git clone https://github.com/DRIMOL/efibbcaju.git ~/efybank"
     fi
     check_success "Repositório clonado com sucesso." "Falha ao clonar o repositório."
+fi
+
+# Voltar ao diretório original se possível, ou ir para o diretório do projeto
+if [ -d "$CURRENT_DIR" ]; then
+    cd "$CURRENT_DIR"
+else
+    cd "$PROJECT_DIR"
 fi
 
 # Criar estrutura de diretórios
