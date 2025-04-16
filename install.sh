@@ -39,6 +39,15 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Determinar o usuário para instalação
+if [ -n "$SUDO_USER" ]; then
+    INSTALL_USER=$SUDO_USER
+    print_message "Instalando para o usuário: $INSTALL_USER"
+else
+    INSTALL_USER="root"
+    print_message "Instalando como usuário root"
+fi
+
 # Início da instalação
 print_message "Iniciando a instalação do webhook EFI Bank..."
 print_message "Verificando pré-requisitos..."
@@ -87,14 +96,26 @@ else
     check_success "Docker Compose instalado com sucesso." "Falha ao instalar Docker Compose."
 fi
 
-# Adicionar usuário atual ao grupo docker
-print_message "Adicionando usuário ao grupo docker..."
-usermod -aG docker $SUDO_USER
-check_success "Usuário adicionado ao grupo docker." "Falha ao adicionar usuário ao grupo docker."
+# Adicionar usuário ao grupo docker (apenas se não for root)
+if [ "$INSTALL_USER" != "root" ]; then
+    print_message "Adicionando usuário ao grupo docker..."
+    usermod -aG docker $INSTALL_USER
+    check_success "Usuário adicionado ao grupo docker." "Falha ao adicionar usuário ao grupo docker."
+else
+    print_message "Usuário root já tem permissões para Docker."
+fi
 
 # Criar diretório do projeto
 print_message "Configurando o projeto..."
-PROJECT_DIR="/home/$SUDO_USER/efybank"
+
+# Determinar o diretório do projeto
+if [ "$INSTALL_USER" = "root" ]; then
+    PROJECT_DIR="/root/efybank"
+else
+    PROJECT_DIR="/home/$INSTALL_USER/efybank"
+fi
+
+print_message "Diretório do projeto: $PROJECT_DIR"
 
 # Verificar se o diretório já existe
 if [ -d "$PROJECT_DIR" ]; then
@@ -110,33 +131,57 @@ fi
 # Clonar o repositório se o diretório não existir
 if [ ! -d "$PROJECT_DIR" ]; then
     print_message "Clonando o repositório do GitHub..."
-    su - $SUDO_USER -c "git clone https://github.com/MakeToMe/efybank.git ~/efybank"
+    if [ "$INSTALL_USER" = "root" ]; then
+        git clone https://github.com/DRIMOL/efibbcaju.git $PROJECT_DIR
+    else
+        su - $INSTALL_USER -c "git clone https://github.com/DRIMOL/efibbcaju.git ~/efybank"
+    fi
     check_success "Repositório clonado com sucesso." "Falha ao clonar o repositório."
 fi
 
 # Criar estrutura de diretórios
 print_message "Criando estrutura de diretórios..."
-su - $SUDO_USER -c "mkdir -p ~/efybank/certs ~/efybank/logs/nginx ~/efybank/logs/php"
+if [ "$INSTALL_USER" = "root" ]; then
+    mkdir -p $PROJECT_DIR/certs $PROJECT_DIR/logs/nginx $PROJECT_DIR/logs/php
+else
+    su - $INSTALL_USER -c "mkdir -p ~/efybank/certs ~/efybank/logs/nginx ~/efybank/logs/php"
+fi
 check_success "Estrutura de diretórios criada com sucesso." "Falha ao criar estrutura de diretórios."
 
 # Baixar certificados
 print_message "Baixando certificados da EFI Bank..."
-su - $SUDO_USER -c "cd ~/efybank/certs && curl -o certificate-chain-prod.crt https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt"
+if [ "$INSTALL_USER" = "root" ]; then
+    cd $PROJECT_DIR/certs && curl -o certificate-chain-prod.crt https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt
+else
+    su - $INSTALL_USER -c "cd ~/efybank/certs && curl -o certificate-chain-prod.crt https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt"
+fi
 check_success "Certificado de produção baixado com sucesso." "Falha ao baixar certificado de produção."
 
 # Gerar certificados autoassinados para testes
 print_message "Gerando certificados SSL autoassinados para testes..."
-su - $SUDO_USER -c "cd ~/efybank/certs && openssl genrsa -out server.key 2048 && openssl req -new -x509 -key server.key -out server.crt -days 365 -subj '/CN=localhost'"
+if [ "$INSTALL_USER" = "root" ]; then
+    cd $PROJECT_DIR/certs && openssl genrsa -out server.key 2048 && openssl req -new -x509 -key server.key -out server.crt -days 365 -subj '/CN=localhost'
+else
+    su - $INSTALL_USER -c "cd ~/efybank/certs && openssl genrsa -out server.key 2048 && openssl req -new -x509 -key server.key -out server.crt -days 365 -subj '/CN=localhost'"
+fi
 check_success "Certificados SSL gerados com sucesso." "Falha ao gerar certificados SSL."
 
 # Ajustar permissões dos certificados
 print_message "Ajustando permissões dos certificados..."
-su - $SUDO_USER -c "chmod 644 ~/efybank/certs/server.crt ~/efybank/certs/certificate-chain-prod.crt && chmod 600 ~/efybank/certs/server.key"
+if [ "$INSTALL_USER" = "root" ]; then
+    chmod 644 $PROJECT_DIR/certs/server.crt $PROJECT_DIR/certs/certificate-chain-prod.crt && chmod 600 $PROJECT_DIR/certs/server.key
+else
+    su - $INSTALL_USER -c "chmod 644 ~/efybank/certs/server.crt ~/efybank/certs/certificate-chain-prod.crt && chmod 600 ~/efybank/certs/server.key"
+fi
 check_success "Permissões dos certificados ajustadas com sucesso." "Falha ao ajustar permissões dos certificados."
 
 # Iniciar os contêineres Docker
 print_message "Iniciando os contêineres Docker..."
-su - $SUDO_USER -c "cd ~/efybank && docker-compose up -d"
+if [ "$INSTALL_USER" = "root" ]; then
+    cd $PROJECT_DIR && docker-compose up -d
+else
+    su - $INSTALL_USER -c "cd ~/efybank && docker-compose up -d"
+fi
 check_success "Contêineres Docker iniciados com sucesso." "Falha ao iniciar contêineres Docker."
 
 # Configurar o firewall
@@ -155,5 +200,9 @@ print_message "Instalação concluída com sucesso!"
 print_message "O webhook está disponível em: https://localhost/webhook"
 print_message "Para verificar o status dos contêineres: docker-compose -f $PROJECT_DIR/docker-compose.yml ps"
 print_message "Para verificar os logs: docker-compose -f $PROJECT_DIR/docker-compose.yml logs"
-print_warning "IMPORTANTE: Você precisa fazer logout e login novamente para que as alterações do grupo docker tenham efeito."
+
+if [ "$INSTALL_USER" != "root" ]; then
+    print_warning "IMPORTANTE: Você precisa fazer logout e login novamente para que as alterações do grupo docker tenham efeito."
+fi
+
 print_warning "Para um ambiente de produção, configure certificados SSL válidos e atualize o arquivo nginx-webhook.conf."
