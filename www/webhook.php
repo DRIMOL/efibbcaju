@@ -37,12 +37,26 @@ function logRequestDetails() {
 }
 
 // Response function
-function sendResponse($status, $message) {
+function sendResponse($status, $message, $body = null) {
     http_response_code($status);
-    // Apenas retorna a string "200" em vez de um objeto JSON
-    echo "200";
-    logMessage("Response sent: $status - $message");
-    logMessage("Response body: 200");
+    
+    // Se o status for 200 e nenhum corpo específico for fornecido, retorna "200"
+    if ($status == 200 && $body === null) {
+        echo "200";
+        logMessage("Response sent: $status - $message");
+        logMessage("Response body: 200");
+    } else if ($body !== null) {
+        // Se um corpo específico for fornecido, use-o
+        echo $body;
+        logMessage("Response sent: $status - $message");
+        logMessage("Response body: $body");
+    } else {
+        // Para erros, retorne um JSON com a mensagem de erro
+        echo json_encode(['status' => $status, 'message' => $message]);
+        logMessage("Response sent: $status - $message");
+        logMessage("Response body: " . json_encode(['status' => $status, 'message' => $message]));
+    }
+    
     logMessage("=== FIM DA REQUISIÇÃO ===");
     exit;
 }
@@ -98,8 +112,10 @@ try {
     
     logMessage("mTLS verification status: " . ($clientVerified ? "SUCCESS" : "FAILED"));
     
+    // Verificação rigorosa do mTLS conforme exigido pelo EFI Pay
     if (!$clientVerified) {
-        logMessage("mTLS verification failed");
+        logMessage("mTLS verification failed - Rejecting as required by EFI Pay");
+        // Retornar erro 403 conforme exigido pela documentação do EFI Pay
         sendResponse(403, "mTLS verification required");
     }
     
@@ -125,16 +141,32 @@ try {
     // Log the forward result
     logMessage("Forwarding result: " . ($forwardResult ? "SUCCESS" : "FAILED"));
     
-    // Always return 200 status code
-    if ($forwardResult) {
-        sendResponse(200, "Webhook processed successfully");
+    // Se a verificação mTLS foi bem-sucedida, retorne 200 conforme exigido pelo EFI Pay
+    if ($clientVerified) {
+        if ($forwardResult) {
+            logMessage("mTLS verification SUCCESS and forwarding SUCCESS - Returning 200");
+            sendResponse(200, "Webhook processed successfully");
+        } else {
+            // Mesmo com falha no encaminhamento, se o mTLS foi validado, retorne 200
+            logMessage("mTLS verification SUCCESS but forwarding FAILED - Still returning 200 as required by EFI Pay");
+            sendResponse(200, "Webhook received");
+        }
     } else {
-        // Log the error but still return 200
-        logMessage("Warning: Failed to forward webhook data to n8n, but returning 200 as requested");
-        sendResponse(200, "Webhook received");
+        // Este caso não deveria ocorrer devido à verificação anterior, mas mantemos por segurança
+        logMessage("mTLS verification FAILED - Rejecting as required by EFI Pay");
+        sendResponse(403, "mTLS verification required");
     }
     
 } catch (Exception $e) {
     logMessage("Error processing webhook: " . $e->getMessage());
-    sendResponse(500, "Internal server error: " . $e->getMessage());
+    // Em caso de erro interno, ainda verificamos se o mTLS foi validado
+    if (isset($_SERVER['HTTP_X_CLIENT_VERIFIED']) && $_SERVER['HTTP_X_CLIENT_VERIFIED'] === 'SUCCESS') {
+        // Se o mTLS foi validado, retorne 200 mesmo com erro interno
+        logMessage("Internal error but mTLS verification SUCCESS - Returning 200 as required by EFI Pay");
+        sendResponse(200, "Webhook received despite internal error");
+    } else {
+        // Se o mTLS falhou, retorne erro
+        logMessage("Internal error and mTLS verification FAILED - Rejecting as required by EFI Pay");
+        sendResponse(403, "mTLS verification required");
+    }
 }
