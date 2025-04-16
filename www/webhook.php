@@ -9,12 +9,22 @@
 // Set error reporting
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/php_errors.log');
 
 // Log function
 function logMessage($message) {
     $logFile = __DIR__ . '/webhook.log';
     $timestamp = date('Y-m-d H:i:s');
+    
+    // Garantir que o diretório de logs exista e tenha permissões adequadas
+    if (!file_exists($logFile)) {
+        touch($logFile);
+        chmod($logFile, 0666); // Permissões para garantir que o arquivo seja gravável
+    }
+    
     file_put_contents($logFile, "[$timestamp] $message" . PHP_EOL, FILE_APPEND);
+    error_log("[$timestamp] $message"); // Também log para stderr para aparecer nos logs do container
 }
 
 // Log request details
@@ -30,6 +40,7 @@ function logRequestDetails() {
     logMessage("=== NOVA REQUISIÇÃO RECEBIDA ===");
     logMessage("Método: " . $_SERVER['REQUEST_METHOD']);
     logMessage("URI: " . $_SERVER['REQUEST_URI']);
+    logMessage("Server Info: " . json_encode($_SERVER));
     logMessage("Headers:\n$headerStr");
     logMessage("Body: $requestBody");
     
@@ -76,6 +87,9 @@ function forwardToN8n($data) {
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
     // Habilitar rastreamento de informações detalhadas
     curl_setopt($ch, CURLINFO_HEADER_OUT, true);
+    // Desabilitar verificação SSL para testes (remover em produção)
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
     
     logMessage("Forwarding data to n8n webhook: " . json_encode($data));
     
@@ -101,6 +115,21 @@ function forwardToN8n($data) {
     return ($httpCode >= 200 && $httpCode < 300);
 }
 
+// Criar um endpoint de teste para verificar se o serviço está funcionando
+if (isset($_GET['test']) && $_GET['test'] === 'true') {
+    logMessage("Test endpoint accessed");
+    echo json_encode([
+        'status' => 'success',
+        'message' => 'Webhook service is running',
+        'time' => date('Y-m-d H:i:s'),
+        'server_info' => [
+            'php_version' => phpversion(),
+            'server_software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'
+        ]
+    ]);
+    exit;
+}
+
 // Main webhook handler
 try {
     // Log all request details
@@ -111,6 +140,7 @@ try {
     $clientVerified = isset($_SERVER['HTTP_X_CLIENT_VERIFIED']) && $_SERVER['HTTP_X_CLIENT_VERIFIED'] === 'SUCCESS';
     
     logMessage("mTLS verification status: " . ($clientVerified ? "SUCCESS" : "FAILED"));
+    logMessage("X-Client-Verified header: " . ($_SERVER['HTTP_X_CLIENT_VERIFIED'] ?? 'Not Set'));
     
     // Verificação rigorosa do mTLS conforme exigido pelo EFI Pay
     if (!$clientVerified) {
@@ -159,6 +189,8 @@ try {
     
 } catch (Exception $e) {
     logMessage("Error processing webhook: " . $e->getMessage());
+    logMessage("Stack trace: " . $e->getTraceAsString());
+    
     // Em caso de erro interno, ainda verificamos se o mTLS foi validado
     if (isset($_SERVER['HTTP_X_CLIENT_VERIFIED']) && $_SERVER['HTTP_X_CLIENT_VERIFIED'] === 'SUCCESS') {
         // Se o mTLS foi validado, retorne 200 mesmo com erro interno
