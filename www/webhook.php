@@ -74,7 +74,7 @@ function sendResponse($status, $message, $body = null) {
 
 // Forward to n8n webhook
 function forwardToN8n($data) {
-    $n8nWebhook = 'https://back.bcaju.ai/v1/efi_padrao';
+    $n8nWebhook = 'https://rota.bcaju.ai/v1/efi_padrao';
     
     $ch = curl_init($n8nWebhook);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

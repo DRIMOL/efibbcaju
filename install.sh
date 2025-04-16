@@ -212,7 +212,7 @@ fi
 
 # Exibir informações finais
 print_message "Instalação concluída com sucesso!"
-print_message "O webhook está disponível em: https://localhost/webhook"
+print_message "O webhook está disponível em: https://bb.bcaju.com.br/webhook"
 print_message "Para verificar o status dos contêineres: docker-compose -f $PROJECT_DIR/docker-compose.yml ps"
 print_message "Para verificar os logs: docker-compose -f $PROJECT_DIR/docker-compose.yml logs"
 
@@ -220,4 +220,5 @@ if [ "$INSTALL_USER" != "root" ]; then
     print_warning "IMPORTANTE: Você precisa fazer logout e login novamente para que as alterações do grupo docker tenham efeito."
 fi
 
-print_warning "Para um ambiente de produção, configure certificados SSL válidos e atualize o arquivo nginx-webhook.conf."
+print_warning "IMPORTANTE: Certifique-se de que o domínio bb.bcaju.com.br está configurado para apontar para o IP desta VPS."
+print_warning "Para testar o webhook, acesse: https://bb.bcaju.com.br/webhook?test=true"
