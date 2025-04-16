@@ -17,12 +17,33 @@ function logMessage($message) {
     file_put_contents($logFile, "[$timestamp] $message" . PHP_EOL, FILE_APPEND);
 }
 
+// Log request details
+function logRequestDetails() {
+    $headers = getallheaders();
+    $headerStr = "";
+    foreach ($headers as $key => $value) {
+        $headerStr .= "$key: $value\n";
+    }
+    
+    $requestBody = file_get_contents('php://input');
+    
+    logMessage("=== NOVA REQUISIÇÃO RECEBIDA ===");
+    logMessage("Método: " . $_SERVER['REQUEST_METHOD']);
+    logMessage("URI: " . $_SERVER['REQUEST_URI']);
+    logMessage("Headers:\n$headerStr");
+    logMessage("Body: $requestBody");
+    
+    return $requestBody;
+}
+
 // Response function
 function sendResponse($status, $message) {
     http_response_code($status);
     // Apenas retorna a string "200" em vez de um objeto JSON
     echo "200";
     logMessage("Response sent: $status - $message");
+    logMessage("Response body: 200");
+    logMessage("=== FIM DA REQUISIÇÃO ===");
     exit;
 }
 
@@ -37,14 +58,26 @@ function forwardToN8n($data) {
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Content-Type: application/json',
     ]);
+    // Adicionar timeout para evitar esperas longas
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    // Habilitar rastreamento de informações detalhadas
+    curl_setopt($ch, CURLINFO_HEADER_OUT, true);
     
     logMessage("Forwarding data to n8n webhook: " . json_encode($data));
     
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $info = curl_getinfo($ch);
+    
+    // Log detalhado da requisição curl
+    logMessage("CURL request details:\n" . 
+              "URL: {$info['url']}\n" .
+              "Request headers: {$info['request_header']}\n" .
+              "Total time: {$info['total_time']} seconds\n" .
+              "Connect time: {$info['connect_time']} seconds");
     
     if (curl_errno($ch)) {
-        logMessage("Error forwarding to n8n: " . curl_error($ch));
+        logMessage("Error forwarding to n8n: " . curl_error($ch) . " (Code: " . curl_errno($ch) . ")");
         return false;
     }
     
@@ -56,17 +89,21 @@ function forwardToN8n($data) {
 
 // Main webhook handler
 try {
+    // Log all request details
+    $requestBody = logRequestDetails();
+    
     // Check if the request is using mTLS
     // Nginx will set this header if mTLS validation passes
     $clientVerified = isset($_SERVER['HTTP_X_CLIENT_VERIFIED']) && $_SERVER['HTTP_X_CLIENT_VERIFIED'] === 'SUCCESS';
+    
+    logMessage("mTLS verification status: " . ($clientVerified ? "SUCCESS" : "FAILED"));
     
     if (!$clientVerified) {
         logMessage("mTLS verification failed");
         sendResponse(403, "mTLS verification required");
     }
     
-    // Get the request body
-    $requestBody = file_get_contents('php://input');
+    // Check if request body is empty
     if (empty($requestBody)) {
         logMessage("Empty request body");
         sendResponse(400, "Empty request body");
@@ -84,6 +121,9 @@ try {
     
     // Forward the data to n8n webhook
     $forwardResult = forwardToN8n($data);
+    
+    // Log the forward result
+    logMessage("Forwarding result: " . ($forwardResult ? "SUCCESS" : "FAILED"));
     
     // Always return 200 status code
     if ($forwardResult) {
