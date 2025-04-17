@@ -1,95 +1,131 @@
-# EFI Bank Webhook Service
+# EFI Bank Webhook
 
-Este serviço implementa um webhook para receber notificações da EFI Bank, validar a autenticação mTLS e encaminhar os dados validados para o webhook do n8n.
+Este projeto implementa um webhook para receber notificações da EFI Bank com autenticação mTLS (mutual TLS), processar os dados e encaminhá-los para um endpoint específico.
 
 ## Estrutura do Projeto
 
 ```
-efybank/
-├── certs/                  # Diretório para armazenar certificados
-├── www/                    # Diretório para arquivos PHP
-│   └── webhook.php         # Manipulador do webhook
-├── logs/                   # Diretório para logs (criado automaticamente)
-├── docker-compose.yml      # Configuração do Docker Compose
-├── Dockerfile.php          # Dockerfile para o contêiner PHP
-├── nginx-webhook.conf      # Configuração do Nginx
+/
+├── certs/                  # Certificados SSL e da EFI Bank
+├── logs/                   # Logs do Nginx e PHP
+├── www/                    # Arquivos PHP do webhook
+│   └── webhook.php         # Manipulador de webhook em PHP
+├── docker-compose.yml      # Configuração dos contêineres Docker
+├── install.sh              # Script de instalação automatizada
+├── check_certs.sh          # Script para verificar certificados
+├── restart_service.sh      # Script para reiniciar os serviços
+├── nginx-webhook.conf      # Configuração do Nginx com suporte a mTLS
 └── README.md               # Este arquivo
 ```
 
 ## Requisitos
 
-- Docker
-- Docker Compose
-- Certificados SSL para seu domínio
-- Certificado público da EFI Bank
+- Ubuntu 20.04 LTS
+- Domínio configurado (bb.bcaju.com.br) apontando para o servidor
+- Acesso root ao servidor
 
-## Configuração
+## Configurações Importantes
 
-### 1. Obtenha os Certificados
+- **Domínio**: bb.bcaju.com.br
+- **Endpoint de redirecionamento**: https://back.bcaju.ai/v1/efi_padrao
+- **Certificado mTLS da EFI Bank**: https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt
 
-Baixe o certificado público da EFI Bank:
+## Instalação
 
-- Produção: https://certificados.efipay.com.br/webhooks/certificate-chain-prod.crt
-- Homologação: https://certificados.efipay.com.br/webhooks/certificate-chain-homolog.crt
+### 1. Clonar o repositório no servidor
 
-Salve o certificado no diretório `certs/`.
-
-### 2. Configure seus Certificados SSL
-
-Coloque seus certificados SSL no diretório `certs/`:
-- Certificado: `certs/your-certificate.crt`
-- Chave privada: `certs/your-private.key`
-
-### 3. Atualize a Configuração do Nginx
-
-Edite o arquivo `nginx-webhook.conf` para apontar para os caminhos corretos dos certificados:
-
-```nginx
-ssl_certificate /etc/nginx/certs/your-certificate.crt;
-ssl_certificate_key /etc/nginx/certs/your-private.key;
-ssl_client_certificate /etc/nginx/certs/certificate-chain-prod.crt;
+```bash
+git clone https://github.com/seu-usuario/efibank.git
+cd efibank
 ```
 
-Atualize também o `server_name` para seu domínio real.
+### 2. Tornar os scripts executáveis
 
-### 4. Crie os Diretórios de Logs
-
-```powershell
-mkdir -p logs/nginx logs/php
+```bash
+chmod +x install.sh check_certs.sh restart_service.sh
 ```
 
-## Execução
+### 3. Executar o script de instalação
 
-Para iniciar o serviço:
-
-```powershell
-docker-compose up -d
+```bash
+sudo ./install.sh
 ```
 
-Para verificar os logs:
+O script de instalação irá:
+- Atualizar o sistema
+- Instalar as dependências necessárias (Nginx, PHP-FPM, Docker, etc.)
+- Baixar o certificado da EFI Bank
+- Configurar o Nginx com suporte a mTLS
+- Obter um certificado SSL para o domínio (opcional)
+- Configurar permissões e reiniciar os serviços
 
-```powershell
-docker-compose logs -f
+## Verificação de Certificados
+
+Para verificar a validade dos certificados SSL e da EFI Bank:
+
+```bash
+sudo ./check_certs.sh
+```
+
+## Reiniciar Serviços
+
+Para reiniciar os serviços Nginx e PHP-FPM:
+
+```bash
+sudo ./restart_service.sh
 ```
 
 ## Funcionamento
 
-1. O Nginx recebe as requisições HTTPS e verifica a autenticação mTLS usando o certificado público da EFI Bank.
-2. Se a autenticação for bem-sucedida, a requisição é encaminhada para o PHP.
-3. O script PHP valida a requisição e encaminha os dados para o webhook do n8n em `https://back.bcaju.ai/v1/efi_padrao`.
-4. Uma resposta de sucesso (código 200) é enviada de volta para a EFI Bank.
+1. A EFI Bank envia uma requisição POST para https://bb.bcaju.com.br/
+2. O Nginx verifica a autenticação mTLS usando o certificado da EFI Bank
+3. Se a autenticação for bem-sucedida, a requisição é encaminhada para o PHP
+4. O PHP processa a requisição, registra os dados e encaminha para https://back.bcaju.ai/v1/efi_padrao
+5. Uma resposta de sucesso (código 200) é enviada de volta para a EFI Bank
 
 ## Logs
 
-Os logs do webhook são armazenados em:
-- `www/webhook.log`: Logs do processamento do webhook
-- `logs/nginx/`: Logs do Nginx
-- `logs/php/`: Logs do PHP-FPM
+Os logs do webhook podem ser encontrados em:
+- Logs do Nginx: `/var/log/nginx/bb.bcaju.com.br-access.log` e `/var/log/nginx/bb.bcaju.com.br-error.log`
+- Logs do webhook: `/var/log/efibank/webhook.log`
 
 ## Solução de Problemas
 
-Se você encontrar problemas com a autenticação mTLS, verifique:
-1. Se o certificado da EFI Bank está correto e acessível
-2. Se seus certificados SSL estão configurados corretamente
-3. Se o Nginx está configurado para exigir a verificação do cliente
-4. Os logs do Nginx para mensagens de erro relacionadas à SSL/TLS
+Se o webhook não estiver funcionando corretamente:
+
+1. Verifique se os serviços estão em execução:
+   ```bash
+   sudo systemctl status nginx
+   sudo systemctl status php7.4-fpm
+   ```
+
+2. Verifique os logs:
+   ```bash
+   tail -f /var/log/nginx/bb.bcaju.com.br-error.log
+   tail -f /var/log/efibank/webhook.log
+   ```
+
+3. Verifique se os certificados são válidos:
+   ```bash
+   sudo ./check_certs.sh
+   ```
+
+4. Teste a conexão mTLS:
+   ```bash
+   curl -k --cert /etc/efibank/certs/certificate-chain-prod.crt https://bb.bcaju.com.br/
+   ```
+
+## Segurança
+
+Este projeto implementa as seguintes medidas de segurança:
+
+1. **Autenticação mTLS**: Garante que apenas a EFI Bank possa enviar requisições para o webhook
+2. **HTTPS**: Todas as comunicações são criptografadas
+3. **Validação de JSON**: Verifica se o conteúdo recebido é um JSON válido
+4. **Logging**: Registra todas as requisições e respostas para auditoria
+
+## Manutenção
+
+- Verifique regularmente a validade dos certificados usando o script `check_certs.sh`
+- Monitore os logs para detectar possíveis problemas
+- Atualize o sistema e as dependências regularmente
