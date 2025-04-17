@@ -57,9 +57,7 @@ apt-get install -y \
     php7.4-curl \
     php7.4-json \
     php7.4-common \
-    certbot \
-    python3-certbot-nginx \
-    git
+    ssl-cert
 
 # Verificar se Docker já está instalado
 if ! command -v docker &> /dev/null; then
@@ -105,27 +103,6 @@ cp nginx-webhook.conf /etc/nginx/sites-available/bb.bcaju.com.br.conf
 # Habilitar o site no Nginx
 ln -sf /etc/nginx/sites-available/bb.bcaju.com.br.conf /etc/nginx/sites-enabled/
 
-# Verificar configuração do Nginx
-nginx -t
-if [ $? -ne 0 ]; then
-    error "Configuração do Nginx inválida. Verifique o arquivo nginx-webhook.conf."
-    exit 1
-fi
-
-# Perguntar se deseja obter certificado SSL com Certbot
-read -p "Deseja obter um certificado SSL para bb.bcaju.com.br usando Certbot? (s/n): " choice
-if [ "$choice" = "s" ]; then
-    log "Obtendo certificado SSL com Certbot..."
-    certbot --nginx -d bb.bcaju.com.br
-    
-    # Copiar certificados para o diretório do EFI Bank
-    cp /etc/letsencrypt/live/bb.bcaju.com.br/fullchain.pem /etc/efibank/certs/server_ssl.crt.pem
-    cp /etc/letsencrypt/live/bb.bcaju.com.br/privkey.pem /etc/efibank/certs/server_ssl.key.pem
-else
-    warn "Você optou por não obter um certificado SSL automaticamente."
-    warn "Você precisará configurar manualmente os certificados SSL em /etc/efibank/certs/"
-fi
-
 # Configurar permissões
 log "Configurando permissões..."
 chown -R www-data:www-data /var/www/efibank
@@ -135,6 +112,13 @@ chmod -R 755 /var/www/efibank
 log "Reiniciando serviços..."
 systemctl restart php7.4-fpm
 systemctl restart nginx
+
+# Verificar configuração do Nginx
+nginx -t
+if [ $? -ne 0 ]; then
+    error "Configuração do Nginx inválida. Verifique o arquivo nginx-webhook.conf."
+    exit 1
+fi
 
 log "Instalação concluída com sucesso!"
 log "Seu webhook está configurado em: https://bb.bcaju.com.br/"
@@ -146,8 +130,7 @@ echo "============================================================"
 echo "                  PRÓXIMOS PASSOS                          "
 echo "============================================================"
 echo "1. Verifique se o domínio bb.bcaju.com.br está apontando para este servidor"
-echo "2. Certifique-se de que os certificados SSL estão configurados corretamente"
-echo "3. Teste o webhook usando o comando:"
+echo "2. Teste o webhook usando o comando:"
 echo "   curl -k --cert /etc/efibank/certs/certificate-chain-prod.crt https://bb.bcaju.com.br/"
-echo "4. Configure o webhook na EFI Bank usando a URL: https://bb.bcaju.com.br/"
+echo "3. Configure o webhook na EFI Bank usando a URL: https://bb.bcaju.com.br/"
 echo "============================================================"
